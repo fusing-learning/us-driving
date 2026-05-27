@@ -37,12 +37,7 @@ export class HUD {
         color:#fff; font:15px/1.55 sans-serif;
         background:rgba(0,0,0,.5); padding:10px 16px; border-radius:10px;
         max-width:290px; text-shadow:0 1px 3px #000;
-      ">
-        <b style="color:#ffdd88">Lesson 1 — Keep Right</b><br>
-        Drive on the <b>right</b> side of the road.<br>
-        Yellow dashes = centre line.<br>
-        <span style="color:#aaddff">You sit on the LEFT.  Car stays RIGHT.</span>
-      </div>
+      "></div>
 
       <!-- Turn-signal indicators (bottom-center) -->
       <div style="position:absolute; bottom:22px; left:50%; transform:translateX(-50%); display:flex; gap:20px;">
@@ -77,8 +72,12 @@ export class HUD {
     this._mistakes = document.getElementById('hud-mistakes');
     this._sigL     = document.getElementById('hud-sig-l');
     this._sigR     = document.getElementById('hud-sig-r');
+    this._obj      = document.getElementById('hud-obj');
     this._blinkTimer = 0;
     this._blinkOn    = false;
+    this._lastObjKey = null;
+
+    this._updateObjective(0);
   }
 
   update(car, coach, controls, dt) {
@@ -95,6 +94,8 @@ export class HUD {
 
     this._mistakes.textContent = `Mistakes: ${coach.mistakeCount}`;
 
+    this._updateObjective(car.position.z);
+
     // Turn signal blink
     if (dt && controls) {
       this._blinkTimer += dt;
@@ -102,6 +103,33 @@ export class HUD {
       const blink = this._blinkOn ? '1' : '.2';
       this._sigL.style.opacity = controls.signalLeft  ? blink : '.15';
       this._sigR.style.opacity = controls.signalRight ? blink : '.15';
+    }
+  }
+
+  _updateObjective(z) {
+    let key, html;
+    if (z < -460) {
+      key  = 'roundabout';
+      html = `<b style="color:#ffdd88">Lesson 3 — Roundabout</b><br>
+US roundabouts go <b>counter-clockwise</b>.<br>
+Yield at entry, then <b>turn RIGHT</b> to join the flow.<br>
+<span style="color:#ff9988">SG = clockwise &nbsp;|&nbsp; US = counter-clockwise!</span>`;
+    } else if (z < -270) {
+      key  = 'stop';
+      html = `<b style="color:#ffdd88">Lesson 2 — 4-Way Stop</b><br>
+Come to a <b>complete stop</b> at the white line.<br>
+First to arrive = first to go.<br>
+<span style="color:#aaddff">Tie → yield to the car on your RIGHT.</span>`;
+    } else {
+      key  = 'keepright';
+      html = `<b style="color:#ffdd88">Lesson 1 — Keep Right</b><br>
+Drive on the <b>right</b> side of the road.<br>
+Yellow dashes = centre line.<br>
+<span style="color:#aaddff">You sit on the LEFT. &nbsp;Car stays RIGHT.</span>`;
+    }
+    if (key !== this._lastObjKey) {
+      this._obj.innerHTML  = html;
+      this._lastObjKey = key;
     }
   }
 }

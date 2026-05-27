@@ -8,12 +8,19 @@ export const INTERSECTION = {
   stopLineNorth: -6.5,   // southbound (NPC)    stop line Z
 };
 
-// Shared emissive materials — one set for ALL poles on the main Z-axis road.
+// Shared emissive materials — one set per signal phase (main road vs cross street).
 // Changing .emissive on one material updates every bulb of that colour at once.
 const _mats = {
   red:    new THREE.MeshLambertMaterial({ color: 0x330000, emissive: new THREE.Color(0x1a0000) }),
   yellow: new THREE.MeshLambertMaterial({ color: 0x332200, emissive: new THREE.Color(0x1a0800) }),
   green:  new THREE.MeshLambertMaterial({ color: 0x003300, emissive: new THREE.Color(0x00ff55) }),
+};
+
+// Separate material set for the NPC-facing (NE/NW) poles — opposite phase from main road.
+const _crossMats = {
+  red:    new THREE.MeshLambertMaterial({ color: 0x330000, emissive: new THREE.Color(0xff0000) }),
+  yellow: new THREE.MeshLambertMaterial({ color: 0x332200, emissive: new THREE.Color(0x1a0800) }),
+  green:  new THREE.MeshLambertMaterial({ color: 0x003300, emissive: new THREE.Color(0x001a08) }),
 };
 
 export function buildIntersection(scene) {
@@ -70,14 +77,15 @@ export function buildIntersection(scene) {
   _addStopLine(group, -3.9, -0.1, INTERSECTION.stopLineNorth, y); // NPC   (left lane)
 
   // ── Traffic light poles ───────────────────────────────────────────────
-  // SE & SW poles face northbound (player) traffic; NE & NW face southbound (NPCs)
-  _buildPole(group,  4.5, INTERSECTION.stopLineSouth + 0.3, -1);  // SE – arm left
-  _buildPole(group, -4.5, INTERSECTION.stopLineSouth + 0.3,  1);  // SW – arm right
-  _buildPole(group,  4.5, INTERSECTION.stopLineNorth - 0.3, -1);  // NE
-  _buildPole(group, -4.5, INTERSECTION.stopLineNorth - 0.3,  1);  // NW
+  // SE & SW poles face northbound (player) traffic — main-road phase.
+  // NE & NW poles face southbound (NPC) traffic — cross-street (opposite) phase.
+  _buildPole(group,  4.5, INTERSECTION.stopLineSouth + 0.3, -1, _mats);       // SE
+  _buildPole(group, -4.5, INTERSECTION.stopLineSouth + 0.3,  1, _mats);       // SW
+  _buildPole(group,  4.5, INTERSECTION.stopLineNorth - 0.3, -1, _crossMats);  // NE
+  _buildPole(group, -4.5, INTERSECTION.stopLineNorth - 0.3,  1, _crossMats);  // NW
 
   scene.add(group);
-  return { group, bulbMats: _mats };
+  return { group, bulbMats: _mats, crossBulbMats: _crossMats };
 }
 
 // Call every frame with the current TrafficLight.state string
@@ -89,7 +97,7 @@ export function updateLightVisuals(bulbMats, state) {
 
 // ── Private helpers ─────────────────────────────────────────────────────
 
-function _buildPole(group, x, z, dir) {
+function _buildPole(group, x, z, dir, mats) {
   const grayMat = new THREE.MeshLambertMaterial({ color: 0x666666 });
   const hoodMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
 
@@ -113,7 +121,7 @@ function _buildPole(group, x, z, dir) {
 
   // Bulbs (shared materials → single emissive update changes all poles)
   const bulbGeo = new THREE.SphereGeometry(0.11, 8, 8);
-  [[_mats.red, 5.82], [_mats.yellow, 5.47], [_mats.green, 5.12]].forEach(([mat, by]) => {
+  [[mats.red, 5.82], [mats.yellow, 5.47], [mats.green, 5.12]].forEach(([mat, by]) => {
     const b = new THREE.Mesh(bulbGeo, mat);
     b.position.set(bx, by, z);
     group.add(b);

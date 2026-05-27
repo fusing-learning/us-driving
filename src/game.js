@@ -4,6 +4,9 @@ import { Controls } from './controls.js';
 import { buildRoad } from './world/roadBuilder.js';
 import { buildScenery } from './world/scenery.js';
 import { buildIntersection, updateLightVisuals, INTERSECTION } from './world/intersection.js';
+import { buildNorthRoad } from './world/northRoad.js';
+import { buildStopSignIntersection, STOP_SIGN_INTERSECTION } from './world/stopSignIntersection.js';
+import { buildRoundabout, ROUNDABOUT } from './world/roundabout.js';
 import { TrafficLight } from './rules/lights.js';
 import { TrafficManager } from './traffic/trafficManager.js';
 import { RulesEngine } from './rules/rulesEngine.js';
@@ -11,7 +14,7 @@ import { Coach } from './coaching/coach.js';
 import { HUD } from './ui/hud.js';
 
 const ROAD_WRAP_SOUTH =  170;
-const ROAD_WRAP_NORTH = -160;
+const ROAD_WRAP_NORTH = -740;
 
 export class Game {
   constructor(renderer) {
@@ -29,10 +32,16 @@ export class Game {
     this.coach          = new Coach();
     this.hud            = new HUD();
 
+    this._stoppedAtStop = false;
+
     buildScenery(this.scene);
     buildRoad(this.scene);
-    const { bulbMats } = buildIntersection(this.scene);
-    this._bulbMats = bulbMats;
+    const { bulbMats, crossBulbMats } = buildIntersection(this.scene);
+    this._bulbMats      = bulbMats;
+    this._crossBulbMats = crossBulbMats;
+    buildNorthRoad(this.scene);
+    buildStopSignIntersection(this.scene);
+    buildRoundabout(this.scene);
 
     this._setupLights();
     window.addEventListener('resize', () => this.resize());
@@ -57,24 +66,47 @@ export class Game {
   }
 
   update(dt) {
-    // Capture Z before car moves (needed for stop-line crossing detection)
-    const prevZ = this.car.position.z;
+    // Capture position and speed before car moves (needed for stop-line crossing detection)
+    const prevZ     = this.car.position.z;
+    const prevSpeed = this.car.speed;
 
     this.car.update(dt, this.controls.state);
 
-    // Road loop
-    if (this.car.position.z < ROAD_WRAP_NORTH) this.car.position.z = ROAD_WRAP_SOUTH - 5;
-    if (this.car.position.z > ROAD_WRAP_SOUTH) this.car.position.z = ROAD_WRAP_NORTH + 5;
+    // Road loop — track teleport so crossing detection isn't triggered by the wrap
+    let wrapped = false;
+    if (this.car.position.z < ROAD_WRAP_NORTH) { this.car.position.z = ROAD_WRAP_SOUTH - 5; wrapped = true; }
+    if (this.car.position.z > ROAD_WRAP_SOUTH) { this.car.position.z = ROAD_WRAP_NORTH + 5; wrapped = true; }
+    if (wrapped) this._stoppedAtStop = false;
 
-    // Traffic light tick + visual update
+    // Traffic light tick + visual update (main road and cross-street poles separately)
     this.light.update(dt);
-    updateLightVisuals(this._bulbMats, this.light.state);
+    updateLightVisuals(this._bulbMats,      this.light.state);
+    updateLightVisuals(this._crossBulbMats, this.light.crossState);
 
     // NPC cars
     this.trafficManager.update(dt, this.light.state);
 
+    // Stop-sign state: track whether player came to a complete stop before the line
+    const cz = this.car.position.z;
+    const distToStopLine = cz - STOP_SIGN_INTERSECTION.stopLineSouth;
+    if (distToStopLine > 0 && distToStopLine < 10 && this.car.speed < 0.4) {
+      this._stoppedAtStop = true;
+    }
+    // Reset when far south of the intersection (hasn't arrived yet) or well past it
+    if (distToStopLine > 50 || distToStopLine < -25) {
+      this._stoppedAtStop = false;
+    }
+
     // Rules → coaching → HUD
-    const context    = { light: this.light, intersection: INTERSECTION, prevZ };
+    const context = {
+      light:        this.light,
+      intersection: INTERSECTION,
+      prevZ:        wrapped ? undefined : prevZ,
+      prevSpeed,
+      stopSign:     STOP_SIGN_INTERSECTION,
+      stoppedAtStop: this._stoppedAtStop,
+      roundabout:   ROUNDABOUT,
+    };
     const violations = this.rulesEngine.check(this.car, context);
     this.coach.update(dt, violations);
     this.hud.update(this.car, this.coach, this.controls.state, dt);
