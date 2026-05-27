@@ -11,8 +11,8 @@ export class TrafficManager {
   }
 
   update(dt, lightState) {
-    // Pass each NPC the Z-positions of every other NPC so it can keep following distance
+    // Pass each NPC the Z-positions snapshot and its own index for self-exclusion
     const zs = this.npcs.map(n => n.position.z);
-    this.npcs.forEach(npc => npc.update(dt, lightState, zs));
+    this.npcs.forEach((npc, i) => npc.update(dt, lightState, zs, i));
   }
 }

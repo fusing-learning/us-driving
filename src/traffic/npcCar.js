@@ -65,12 +65,12 @@ export class NpcCar {
     this.group.rotation.y = this.heading;
   }
 
-  update(dt, lightState, allNpcZs) {
+  update(dt, lightState, allNpcZs, selfIndex = -1) {
     // ── Following distance: check for NPC directly ahead (higher Z = south = ahead) ──
     let tooClose = false;
-    for (const oz of allNpcZs) {
-      if (oz === this.position.z) continue;
-      const gap = oz - this.position.z; // positive = that NPC is ahead (south of us)
+    for (let k = 0; k < allNpcZs.length; k++) {
+      if (k === selfIndex) continue;
+      const gap = allNpcZs[k] - this.position.z; // positive = that NPC is ahead (south of us)
       if (gap > 0 && gap < FOLLOW_GAP) { tooClose = true; break; }
     }
 
@@ -78,14 +78,15 @@ export class NpcCar {
     // distToStop > 0 → NPC hasn't reached stop line yet (approaching from north)
     const distToStop = INTERSECTION.stopLineNorth - this.position.z;
     const approachingRed = distToStop > 0 && distToStop < BRAKE_DIST && lightState !== 'green';
-    const atStopLine     = distToStop > -0.5 && distToStop < 0.8;
+    const atStopLine     = distToStop >= 0 && distToStop < 0.8;
 
     let targetSpeed = NPC_SPEED;
-    if (tooClose) {
-      targetSpeed = 0;
-    } else if (approachingRed) {
+    if (approachingRed) {
       // Ramp speed down linearly as we near stop line
       targetSpeed = NPC_SPEED * (distToStop / BRAKE_DIST);
+    }
+    if (tooClose) {
+      targetSpeed = 0;
     }
 
     // Hard clamp at stop line when red/yellow

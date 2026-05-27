@@ -17,6 +17,6 @@ export class TrafficLight {
 
   // State seen by the perpendicular (cross-street) traffic
   get crossState() {
-    return this.state === 'red' ? 'green' : this.state === 'green' ? 'red' : 'yellow';
+    return this.state === 'red' ? 'green' : 'red';
   }
 }

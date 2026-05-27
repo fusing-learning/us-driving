@@ -31,8 +31,9 @@ export class Game {
 
     buildScenery(this.scene);
     buildRoad(this.scene);
-    const { bulbMats } = buildIntersection(this.scene);
-    this._bulbMats = bulbMats;
+    const { bulbMats, crossBulbMats } = buildIntersection(this.scene);
+    this._bulbMats      = bulbMats;
+    this._crossBulbMats = crossBulbMats;
 
     this._setupLights();
     window.addEventListener('resize', () => this.resize());
@@ -57,24 +58,27 @@ export class Game {
   }
 
   update(dt) {
-    // Capture Z before car moves (needed for stop-line crossing detection)
-    const prevZ = this.car.position.z;
+    // Capture position and speed before car moves (needed for stop-line crossing detection)
+    const prevZ     = this.car.position.z;
+    const prevSpeed = this.car.speed;
 
     this.car.update(dt, this.controls.state);
 
-    // Road loop
-    if (this.car.position.z < ROAD_WRAP_NORTH) this.car.position.z = ROAD_WRAP_SOUTH - 5;
-    if (this.car.position.z > ROAD_WRAP_SOUTH) this.car.position.z = ROAD_WRAP_NORTH + 5;
+    // Road loop — track teleport so crossing detection isn't triggered by the wrap
+    let wrapped = false;
+    if (this.car.position.z < ROAD_WRAP_NORTH) { this.car.position.z = ROAD_WRAP_SOUTH - 5; wrapped = true; }
+    if (this.car.position.z > ROAD_WRAP_SOUTH) { this.car.position.z = ROAD_WRAP_NORTH + 5; wrapped = true; }
 
-    // Traffic light tick + visual update
+    // Traffic light tick + visual update (main road and cross-street poles separately)
     this.light.update(dt);
-    updateLightVisuals(this._bulbMats, this.light.state);
+    updateLightVisuals(this._bulbMats,      this.light.state);
+    updateLightVisuals(this._crossBulbMats, this.light.crossState);
 
     // NPC cars
     this.trafficManager.update(dt, this.light.state);
 
     // Rules → coaching → HUD
-    const context    = { light: this.light, intersection: INTERSECTION, prevZ };
+    const context    = { light: this.light, intersection: INTERSECTION, prevZ: wrapped ? undefined : prevZ, prevSpeed };
     const violations = this.rulesEngine.check(this.car, context);
     this.coach.update(dt, violations);
     this.hud.update(this.car, this.coach, this.controls.state, dt);

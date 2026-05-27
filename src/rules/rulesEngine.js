@@ -9,7 +9,7 @@
 export class RulesEngine {
   check(car, context = {}) {
     const violations = new Set();
-    const { light, intersection, prevZ } = context;
+    const { light, intersection, prevZ, prevSpeed } = context;
     const x = car.position.x;
 
     // ── Keep-right ────────────────────────────────────────────────────────
@@ -25,7 +25,7 @@ export class RulesEngine {
       const stop = intersection.stopLineSouth;
 
       // Red-light run: player crossed the stop line while light was not green
-      if (prevZ !== undefined && prevZ > stop && cz <= stop && car.speed > 0.5
+      if (prevZ !== undefined && prevZ > stop && cz <= stop && (prevSpeed ?? car.speed) > 0.5
           && light.state !== 'green') {
         violations.add('RED_LIGHT_RUN');
       }
@@ -39,7 +39,7 @@ export class RulesEngine {
       }
 
       // Stopped at a red light near the stop line → right-turn-on-red tip
-      if (light.state === 'red' && car.speed < 0.4 && Math.abs(cz - stop) < 5) {
+      if (light.state === 'red' && car.speed < 0.4 && distToStop > 0 && distToStop < 5) {
         violations.add('STOPPED_AT_RED');
       }
     }
