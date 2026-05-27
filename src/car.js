@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { clamp } from './utils/math.js';
+import { clamp, headingToSceneYaw } from './utils/math.js';
 
 const MAX_SPEED    = 15;   // m/s (~33 mph)
 const ACCEL        = 9;    // m/s²
@@ -201,7 +201,7 @@ export class Car {
 
     // ── Apply to scene group ──────────────────────────────────────────────
     this.group.position.copy(this.position);
-    this.group.rotation.y = this.heading;
+    this.group.rotation.y = headingToSceneYaw(this.heading);
   }
 
   get speedMph() {

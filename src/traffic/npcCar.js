@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { headingToSceneYaw } from '../utils/math.js';
 import { INTERSECTION } from '../world/intersection.js';
 
 const NPC_SPEED     = 7.5;  // m/s (~17 mph)
@@ -80,7 +81,7 @@ export class NpcCar {
   _sync() {
     this.group.position.copy(this.position);
     this.group.position.y = 0;
-    this.group.rotation.y = this.heading;
+    this.group.rotation.y = headingToSceneYaw(this.heading);
   }
 
   update(dt, lightState, npcs, selfIndex = -1) {

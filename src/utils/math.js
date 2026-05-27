@@ -10,3 +10,9 @@ export function headingForward(heading) {
 export function headingRight(heading) {
   return { x: Math.cos(heading), z: Math.sin(heading) };
 }
+
+// Three.js positive Y yaw turns local -Z counterclockwise from above, while
+// the simulator heading increases clockwise.
+export function headingToSceneYaw(heading) {
+  return -heading;
+}
