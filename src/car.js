@@ -7,6 +7,7 @@ const BRAKE        = 16;   // m/s²
 const DRAG         = 2.5;  // m/s² coast friction
 const STEER_RATE   = 1.6;  // rad/s at low speed
 const STEER_DAMP   = 0.25; // reduces steer rate as speed increases
+const MIN_STEER_SPEED = 0.35; // prevents rotating the car in place while stopped
 
 // Rear-view mirror viewport (shared with game.js render + hud.js frame)
 export const MIRROR_W = 240;
@@ -53,25 +54,25 @@ export class Car {
 
     // ── Interior / cockpit (layer 0 → visible to FPV camera) ─────────────
 
-    // Dashboard – dark shelf spanning the cabin width
-    const dashGeo = new THREE.BoxGeometry(1.85, 0.13, 0.52);
+    // Dashboard – low dark shelf spanning the cabin width
+    const dashGeo = new THREE.BoxGeometry(1.6, 0.07, 0.34);
     const dashMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
     const dash = new THREE.Mesh(dashGeo, dashMat);
-    dash.position.set(0.05, 1.02, -0.52);
+    dash.position.set(0.05, 0.78, -0.72);
     this.group.add(dash);
 
     // Dashboard face (instrument cluster panel, slightly lighter)
-    const panelGeo = new THREE.BoxGeometry(1.82, 0.34, 0.05);
+    const panelGeo = new THREE.BoxGeometry(1.55, 0.14, 0.04);
     const panelMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
     const panel = new THREE.Mesh(panelGeo, panelMat);
-    panel.position.set(0.05, 1.22, -0.78);
+    panel.position.set(0.05, 0.86, -0.92);
     this.group.add(panel);
 
     // Steering wheel column (pillar)
     const colGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.5, 8);
     const colMat = new THREE.MeshLambertMaterial({ color: 0x333333 });
     const column = new THREE.Mesh(colGeo, colMat);
-    column.position.set(-0.29, 0.87, -0.68);
+    column.position.set(-0.29, 0.68, -0.8);
     column.rotation.x = 0.45;
     this.group.add(column);
 
@@ -79,7 +80,7 @@ export class Car {
     const torusGeo = new THREE.TorusGeometry(0.175, 0.027, 8, 28);
     const wheelMat2 = new THREE.MeshLambertMaterial({ color: 0x0d0d0d });
     this.steeringWheel = new THREE.Mesh(torusGeo, wheelMat2);
-    this.steeringWheel.position.set(-0.29, 1.09, -0.74);
+    this.steeringWheel.position.set(-0.29, 0.8, -0.94);
     this.steeringWheel.rotation.x = Math.PI / 2 - 0.45;
     this.group.add(this.steeringWheel);
 
@@ -94,20 +95,20 @@ export class Car {
     const hoodGeo = new THREE.BoxGeometry(1.8, 0.05, 0.12);
     const hoodMat = new THREE.MeshLambertMaterial({ color: 0x2255cc });
     const hoodEdge = new THREE.Mesh(hoodGeo, hoodMat);
-    hoodEdge.position.set(0.05, 0.99, -1.08);
+    hoodEdge.position.set(0.05, 0.72, -1.18);
     this.group.add(hoodEdge);
 
     // Left A-pillar (door frame left side)
-    const pillarGeo = new THREE.BoxGeometry(0.07, 0.55, 0.07);
+    const pillarGeo = new THREE.BoxGeometry(0.035, 0.5, 0.035);
     const pillarMat = new THREE.MeshLambertMaterial({ color: 0x111111 });
     const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
-    leftPillar.position.set(-0.9, 1.35, -0.68);
+    leftPillar.position.set(-1.35, 1.22, -1.0);
     leftPillar.rotation.z = 0.15;
     this.group.add(leftPillar);
 
     // Right A-pillar
     const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
-    rightPillar.position.set(0.9, 1.35, -0.68);
+    rightPillar.position.set(1.25, 1.22, -1.0);
     rightPillar.rotation.z = -0.15;
     this.group.add(rightPillar);
 
@@ -130,12 +131,13 @@ export class Car {
   _buildCamera() {
     // Driver's eye: left side (−X), eye height, slightly back of car center
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 600);
-    this.camera.position.set(-0.44, 1.55, 0.28);
+    this.camera.position.set(-0.44, 1.5, 0.3);
+    this.camera.rotation.x = -0.04;
     this.group.add(this.camera);
 
     // Rear-view mirror: same seat position, rotated 180° to face backward
     this.mirrorCamera = new THREE.PerspectiveCamera(60, MIRROR_W / MIRROR_H, 0.3, 400);
-    this.mirrorCamera.position.set(-0.44, 1.55, 0.28);
+    this.mirrorCamera.position.set(-0.44, 1.5, 0.3);
     this.mirrorCamera.rotation.y = Math.PI;
     this.group.add(this.mirrorCamera);
   }
@@ -167,9 +169,13 @@ export class Car {
     }
 
     // ── Steering (speed-dependent rate) ──────────────────────────────────
-    const steerNow = STEER_RATE / (1 + Math.abs(this.speed) * STEER_DAMP);
-    if (controls.left)  this.heading -= steerNow * dt;
-    if (controls.right) this.heading += steerNow * dt;
+    const speedAbs = Math.abs(this.speed);
+    const steerNow = STEER_RATE / (1 + speedAbs * STEER_DAMP);
+    const steerInput = (controls.right ? 1 : 0) - (controls.left ? 1 : 0);
+    if (steerInput !== 0 && speedAbs >= MIN_STEER_SPEED) {
+      const reverse = this.speed < 0 ? -1 : 1;
+      this.heading += steerInput * reverse * steerNow * dt;
+    }
 
     // Heading auto-straightening removed as it forces alignment to world North (0 heading).
 
@@ -180,7 +186,7 @@ export class Car {
     // ── Camera bob (road feel) ────────────────────────────────────────────
     this._bobPhase += Math.abs(this.speed) * dt * 3.5;
     const bobAmt = Math.min(Math.abs(this.speed) / 8, 1) * 0.018;
-    this.camera.position.y = 1.55 + Math.sin(this._bobPhase) * bobAmt;
+    this.camera.position.y = 1.5 + Math.sin(this._bobPhase) * bobAmt;
 
     // ── Steering wheel rotation ───────────────────────────────────────────
     const steerVis = clamp((controls.left ? -1 : controls.right ? 1 : 0) * 1.4, -1.4, 1.4);

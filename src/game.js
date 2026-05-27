@@ -129,8 +129,11 @@ export class Game {
   }
 
   render() {
-    const w = this.renderer.domElement.width;
-    const h = this.renderer.domElement.height;
+    // Three.js viewport/scissor inputs are CSS pixels; WebGLRenderer applies
+    // its pixel ratio internally. Using the backing-store size crops DPR>1
+    // displays, which makes the FPV look shifted and overly zoomed.
+    const w = this.renderer.domElement.clientWidth;
+    const h = this.renderer.domElement.clientHeight;
 
     // Main FPV — full screen
     this.renderer.setViewport(0, 0, w, h);

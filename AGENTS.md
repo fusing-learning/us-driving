@@ -57,6 +57,30 @@ src/
 | **C — Stops / roundabout / highway** | ⬜ Next | 4-way stop right-of-way, counterclockwise roundabout, highway on-ramp merge |
 | **D — Shell / free drive** | ⬜ | Menu, lesson select, scoring, free-drive loop, rear-view mirror, polish |
 
+## RESOLVED — Retina/DPR viewport crop made the FPV look mirrored/undrivable (2026-05-27)
+**Symptom (reported):** On the default Lesson 1 spawn the forward view looked horizontally
+mirrored (centre line + oncoming NPCs on the wrong side, left A-pillar on the right) and the
+road ahead was blocked.
+
+**Root cause:** `Game.render()` used `renderer.domElement.width/height` for
+`setViewport()`/`setScissor()`. Those values are the WebGL backing-store size. Three.js expects
+CSS-pixel viewport/scissor dimensions and applies `renderer.setPixelRatio()` internally, so on
+Retina/high-DPI displays (`devicePixelRatio=2`) the main FPV and rear-view mirror were
+effectively double-scaled/cropped. Headless screenshots at DPR=1 looked correct, while the
+user's real browser was shifted/zoomed enough to make the center line and A-pillar dominate the
+view.
+
+**The actual fix applied:** `game.js` now uses `renderer.domElement.clientWidth/clientHeight`
+for viewport/scissor sizing. The seated FPV camera was also restored to `(-0.44, 1.5, 0.3)` in
+`car.js`; an earlier uncommitted edit had pushed it too high/forward, which made the dash and
+pillars more intrusive.
+
+**To verify rendering yourself without pestering the user:** `node shot.mjs 0 1024 578 2`
+(Playwright devDependency) launches headless Chromium against the running dev server, clicks
+Lesson 1, writes `shot_<w>x<h>_dpr<dpr>.png`, and exits non-zero if the road visibility metrics
+fail. Always test a 1x and 2x viewport after render/camera changes, for example:
+`node shot.mjs 0 1667 1049 1` and `node shot.mjs 0 1024 578 2`.
+
 ## Key design decisions
 - **Coordinate system**: heading=0 → car faces −Z (north). Increases clockwise from above.
   - `position.x += sin(heading) * speed * dt`
@@ -67,7 +91,7 @@ src/
 - **Traffic lights**: `TrafficLight` in `rules/lights.js`. `game.js` calls `updateLightVisuals(bulbMats, state)` every frame. Bulb materials are shared across all 4 poles so one `.emissive.set()` updates them all.
 - **NPC cars**: heading=π, lane X=−2, wrap at Z=175→−155. Stop at `stopLineNorth` when not green. `trafficManager` passes array of all NPC Z values for following-distance checks.
 - **Camera layers**: Car body on layer 1 (invisible to FPV camera layer 0). Cockpit interior on layer 0.
-- **Driver seat**: camera at local `(-0.44, 1.55, 0.28)` → centre line appears to driver's LEFT = reinforces keep-right.
+- **Driver seat**: camera at local `(-0.44, 1.5, 0.3)` → centre line appears to driver's LEFT = reinforces keep-right. Eye height 1.5 clears the dash panel (top ≈1.39) so the road stays visible; sitting at z=+0.3 keeps the hood/dash ahead as a reference. Do NOT raise above the A-pillar tops (~1.6) or push forward onto the dash — that floats the camera and hides the road.
 - **rulesEngine context**: `check(car, { light, intersection, prevZ })` — `prevZ` is the car's Z from the previous frame, used to detect the exact frame when the player crosses the stop line.
 
 ## Violation keys (rulesEngine → coach)

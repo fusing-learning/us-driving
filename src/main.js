@@ -15,6 +15,15 @@ const menu = new Menu(document.getElementById('menu'), (lesson) => {
 });
 menu.show();
 
+// Three.js scene objects are constructed once per game session. During Vite HMR,
+// code changes to camera or mesh setup can otherwise leave the live scene in a
+// stale half-updated state, so dev updates should rebuild the page from scratch.
+if (import.meta.hot) {
+  import.meta.hot.on('vite:beforeUpdate', () => {
+    window.location.reload();
+  });
+}
+
 function startGame(startZ) {
   if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
   if (game) game.controls.dispose();
