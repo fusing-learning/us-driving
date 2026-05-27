@@ -2,6 +2,7 @@ const MESSAGES = {
   // Phase A
   WRONG_LANE:           { text: '⚠ WRONG LANE — Keep RIGHT!',                              color: '#ff3333', priority: 10, cooldown: 2.5, isMistake: true  },
   LANE_WARNING:         { text: 'Drifting — stay right of centre line',                     color: '#ffaa00', priority:  5, cooldown: 4.0, isMistake: false },
+  CURB_COLLISION:       { text: '💥 CURB COLLISION — Stay on the road!',                   color: '#ff2200', priority: 11, cooldown: 1.5, isMistake: true  },
   // Phase B
   RED_LIGHT_RUN:        { text: '🚨 RED LIGHT VIOLATION!',                                  color: '#ff2222', priority: 15, cooldown: 3.0, isMistake: true  },
   LIGHT_IS_RED:         { text: 'Red light — stop before the line',                         color: '#ff6644', priority:  8, cooldown: 5.0, isMistake: false },

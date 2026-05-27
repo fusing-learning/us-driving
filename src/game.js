@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Car } from './car.js';
+import { Car, MIRROR_W, MIRROR_H } from './car.js';
 import { Controls } from './controls.js';
 import { buildRoad } from './world/roadBuilder.js';
 import { buildScenery } from './world/scenery.js';
@@ -16,23 +16,32 @@ import { HUD } from './ui/hud.js';
 const ROAD_WRAP_SOUTH =  170;
 const ROAD_WRAP_NORTH = -740;
 
+const MIRROR_TOP_PAD = 14;  // px from top of canvas
+
 export class Game {
-  constructor(renderer) {
-    this.renderer = renderer;
+  constructor(renderer, startZ = 80, onMenu = null) {
+    this.renderer     = renderer;
+    this._onMenu      = onMenu;
+    this.paused       = false;
+    this._sessionTime = 0;
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87ceeb);
     this.scene.fog = new THREE.Fog(0x87ceeb, 120, 300);
 
     this.controls       = new Controls();
-    this.car            = new Car(this.scene);
+    this.car            = new Car(this.scene, startZ);
     this.light          = new TrafficLight();
     this.trafficManager = new TrafficManager(this.scene);
     this.rulesEngine    = new RulesEngine();
     this.coach          = new Coach();
-    this.hud            = new HUD();
+    this.hud            = new HUD({
+      onMenu,
+      onResume: () => { this.paused = false; this.hud.setPaused(false); },
+    });
 
     this._stoppedAtStop = false;
+    this._onCurb        = false;
 
     buildScenery(this.scene);
     buildRoad(this.scene);
@@ -66,11 +75,18 @@ export class Game {
   }
 
   update(dt) {
-    // Capture position and speed before car moves (needed for stop-line crossing detection)
+    if (this.controls.consumePause()) {
+      this.paused = !this.paused;
+      this.hud.setPaused(this.paused, this._sessionTime, this.coach.mistakeCount);
+    }
+    if (this.paused) return;
+
+    this._sessionTime += dt;
+
     const prevZ     = this.car.position.z;
     const prevSpeed = this.car.speed;
 
-    this.car.update(dt, this.controls.state);
+    this.car.update(dt, this.controls.state, this._onCurb);
 
     // Road loop — track teleport so crossing detection isn't triggered by the wrap
     let wrapped = false;
@@ -84,7 +100,7 @@ export class Game {
     updateLightVisuals(this._crossBulbMats, this.light.crossState);
 
     // NPC cars
-    this.trafficManager.update(dt, this.light.state);
+    this.trafficManager.update(dt, this.light.state, this.car.position);
 
     // Stop-sign state: track whether player came to a complete stop before the line
     const cz = this.car.position.z;
@@ -92,7 +108,6 @@ export class Game {
     if (distToStopLine > 0 && distToStopLine < 10 && this.car.speed < 0.4) {
       this._stoppedAtStop = true;
     }
-    // Reset when far south of the intersection (hasn't arrived yet) or well past it
     if (distToStopLine > 50 || distToStopLine < -25) {
       this._stoppedAtStop = false;
     }
@@ -108,11 +123,27 @@ export class Game {
       roundabout:   ROUNDABOUT,
     };
     const violations = this.rulesEngine.check(this.car, context);
+    this._onCurb = violations.has('CURB_COLLISION');
     this.coach.update(dt, violations);
-    this.hud.update(this.car, this.coach, this.controls.state, dt);
+    this.hud.update(this.car, this.coach, this.controls.state, dt, this._sessionTime);
   }
 
   render() {
+    const w = this.renderer.domElement.width;
+    const h = this.renderer.domElement.height;
+
+    // Main FPV — full screen
+    this.renderer.setViewport(0, 0, w, h);
+    this.renderer.setScissorTest(false);
     this.renderer.render(this.scene, this.car.camera);
+
+    // Rear-view mirror — top-center strip (WebGL y=0 is bottom of canvas)
+    const mx = Math.floor((w - MIRROR_W) / 2);
+    const my = h - MIRROR_H - MIRROR_TOP_PAD;
+    this.renderer.setScissorTest(true);
+    this.renderer.setScissor(mx, my, MIRROR_W, MIRROR_H);
+    this.renderer.setViewport(mx, my, MIRROR_W, MIRROR_H);
+    this.renderer.render(this.scene, this.car.mirrorCamera);
+    this.renderer.setScissorTest(false);
   }
 }

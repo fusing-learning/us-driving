@@ -24,12 +24,61 @@ export class RulesEngine {
       inRoundabout = dist < roundabout.rOut + 3 && dist > roundabout.rIn - 3;
     }
 
-    // ── Keep-right ────────────────────────────────────────────────────────
-    if (!inRoundabout) {
-      if (x < 0) {
-        violations.add('WRONG_LANE');
-      } else if (x < 1.2) {
-        violations.add('LANE_WARNING');
+    // ── Generalized Keep-right & Curb Collision ──────────────────────────
+    const inIntersection1 = Math.abs(x) < 4.5 && Math.abs(cz) < 4.5;
+    const inIntersection2 = Math.abs(x) < 4.5 && Math.abs(cz + 300) < 4.5;
+    const inIntersection = inIntersection1 || inIntersection2;
+
+    if (!inRoundabout && !inIntersection) {
+      // Find closest road centerline (main road at X=0, cross-streets at Z=0 and Z=-300)
+      const dMain = Math.abs(x);
+      const dCross1 = Math.abs(cz);
+      const dCross2 = Math.abs(cz + 300);
+      const minDist = Math.min(dMain, dCross1, dCross2);
+
+      let dx = 0, dz = 0;
+      let offRoad = false;
+
+      if (minDist === dMain) {
+        dx = -x;
+        dz = 0;
+        if (dMain > 4.1) offRoad = true;
+      } else if (minDist === dCross1) {
+        dx = 0;
+        dz = -cz;
+        if (dCross1 > 4.1) offRoad = true;
+      } else {
+        dx = 0;
+        dz = -300 - cz;
+        if (dCross2 > 4.1) offRoad = true;
+      }
+
+      // Check wrong lane vs. lane warning using player heading right vector
+      // rx and rz perpendicular to heading: headingRight(heading) gives (cos(H), sin(H))
+      const heading = car.heading;
+      const rx = Math.cos(heading);
+      const rz = Math.sin(heading);
+      const dot = dx * rx + dz * rz;
+
+      if (offRoad) {
+        violations.add('CURB_COLLISION');
+      } else {
+        if (dot > 0) {
+          violations.add('WRONG_LANE');
+        } else {
+          const distToCenter = Math.sqrt(dx * dx + dz * dz);
+          if (distToCenter < 1.2) {
+            violations.add('LANE_WARNING');
+          }
+        }
+      }
+    } else if (inRoundabout) {
+      // In roundabout, check if outside ring boundaries
+      const dx = x - roundabout.cx;
+      const dz = cz - roundabout.cz;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      if (dist > roundabout.rOut + 0.15 || dist < roundabout.rIn - 0.15) {
+        violations.add('CURB_COLLISION');
       }
     }
 

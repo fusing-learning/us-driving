@@ -1,86 +1,77 @@
 export class HUD {
-  constructor() {
+  constructor({ onMenu = null, onResume = null } = {}) {
     const el = document.getElementById('hud');
     el.innerHTML = `
       <!-- Speed display (bottom-right) -->
-      <div id="hud-speed" style="
-        position:absolute; bottom:22px; right:22px;
-        color:#fff; font:bold 30px/1 monospace;
-        background:rgba(0,0,0,.45); padding:8px 18px; border-radius:10px;
-        text-shadow:0 1px 4px #000; text-align:right; line-height:1.3;
-      ">
-        <span id="hud-mph">0</span> <span style="font-size:14px">mph</span><br>
-        <span id="hud-kmh" style="font-size:17px; color:#aaddff;">0</span>
-        <span style="font-size:11px; color:#aaddff;">km/h</span>
+      <div class="hud-panel hud-speed">
+        <span id="hud-mph" class="hud-speed-mph">0</span> <span class="hud-speed-unit">mph</span><br>
+        <span id="hud-kmh" class="hud-speed-kmh">0</span> <span class="hud-speed-unit-kmh">km/h</span>
       </div>
 
-      <!-- Coaching message (top-center) -->
-      <div id="hud-coach" style="
-        position:absolute; top:40px; left:50%; transform:translateX(-50%);
-        font:bold 22px/1.3 sans-serif; color:#ff3333;
-        background:rgba(0,0,0,.55); padding:10px 26px; border-radius:12px;
-        text-shadow:0 2px 6px #000; text-align:center;
-        opacity:0; transition:opacity .25s; white-space:nowrap;
-      "></div>
+      <!-- Coaching message (below mirror, top-center) -->
+      <div id="hud-coach" class="hud-coach"></div>
 
-      <!-- Mistake counter (top-right) -->
-      <div id="hud-mistakes" style="
-        position:absolute; top:20px; right:22px;
-        color:#fff; font:14px/1 monospace;
-        background:rgba(0,0,0,.45); padding:5px 14px; border-radius:7px;
-        text-shadow:0 1px 4px #000;
-      ">Mistakes: 0</div>
+      <!-- Session stats (top-right) -->
+      <div class="hud-panel hud-stats">
+        <span id="hud-timer">0:00</span><br>
+        <span id="hud-mistakes">Mistakes: 0</span>
+      </div>
 
       <!-- Lesson objective (top-left) -->
-      <div id="hud-obj" style="
-        position:absolute; top:20px; left:22px;
-        color:#fff; font:15px/1.55 sans-serif;
-        background:rgba(0,0,0,.5); padding:10px 16px; border-radius:10px;
-        max-width:290px; text-shadow:0 1px 3px #000;
-      "></div>
+      <div id="hud-obj" class="hud-panel hud-objective"></div>
+
+      <!-- Rear-view mirror frame (decorative border over the WebGL mirror render) -->
+      <div class="hud-mirror-frame">
+        <div class="hud-mirror-label">REAR VIEW</div>
+      </div>
 
       <!-- Turn-signal indicators (bottom-center) -->
-      <div style="position:absolute; bottom:22px; left:50%; transform:translateX(-50%); display:flex; gap:20px;">
-        <div id="hud-sig-l" style="
-          color:#00bb00; font:bold 22px/1 monospace;
-          opacity:.2; transition:opacity .1s; text-shadow:0 1px 4px #000;
-        ">◀ ◀</div>
-        <div id="hud-sig-r" style="
-          color:#00bb00; font:bold 22px/1 monospace;
-          opacity:.2; transition:opacity .1s; text-shadow:0 1px 4px #000;
-        ">▶ ▶</div>
+      <div class="hud-signals">
+        <div id="hud-sig-l" class="hud-sig-arrow">&#9664; &#9664;</div>
+        <div id="hud-sig-r" class="hud-sig-arrow">&#9654; &#9654;</div>
       </div>
 
       <!-- Controls hint (bottom-left) -->
-      <div style="
-        position:absolute; bottom:22px; left:22px;
-        color:rgba(255,255,255,.65); font:12px/1.65 monospace;
-        background:rgba(0,0,0,.4); padding:8px 14px; border-radius:8px;
-      ">
-        W / ↑  Accelerate<br>
-        S / ↓  Brake / Reverse<br>
-        A / ←  Steer left&nbsp;&nbsp; D / →  Steer right<br>
+      <div class="hud-panel hud-controls-hint">
+        W / &#8593;  Accelerate<br>
+        S / &#8595;  Brake / Reverse<br>
+        A / &#8592;  Steer left&nbsp;&nbsp; D / &#8594;  Steer right<br>
         Q  Signal left&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;E  Signal right<br>
-        R  Reset position
+        R  Reset position&nbsp;&nbsp;&nbsp;P  Pause
+      </div>
+
+      <!-- Pause overlay -->
+      <div id="hud-pause" class="hud-overlay">
+        <div class="hud-overlay-title">PAUSED</div>
+        <div id="hud-pause-stats" class="hud-overlay-stats"></div>
+        <div class="hud-btn-container">
+          <button id="hud-resume" class="btn btn-primary">Resume (P)</button>
+          <button id="hud-menu-btn" class="btn btn-secondary">Menu</button>
+        </div>
       </div>
     `;
 
-    this._speed    = document.getElementById('hud-speed');
-    this._mph      = document.getElementById('hud-mph');
-    this._kmh      = document.getElementById('hud-kmh');
-    this._coach    = document.getElementById('hud-coach');
-    this._mistakes = document.getElementById('hud-mistakes');
-    this._sigL     = document.getElementById('hud-sig-l');
-    this._sigR     = document.getElementById('hud-sig-r');
-    this._obj      = document.getElementById('hud-obj');
+    this._mph        = document.getElementById('hud-mph');
+    this._kmh        = document.getElementById('hud-kmh');
+    this._coach      = document.getElementById('hud-coach');
+    this._mistakes   = document.getElementById('hud-mistakes');
+    this._timer      = document.getElementById('hud-timer');
+    this._sigL       = document.getElementById('hud-sig-l');
+    this._sigR       = document.getElementById('hud-sig-r');
+    this._obj        = document.getElementById('hud-obj');
+    this._pauseEl    = document.getElementById('hud-pause');
+    this._pauseStats = document.getElementById('hud-pause-stats');
     this._blinkTimer = 0;
     this._blinkOn    = false;
     this._lastObjKey = null;
 
+    document.getElementById('hud-resume').addEventListener('click', () => { if (onResume) onResume(); });
+    document.getElementById('hud-menu-btn').addEventListener('click', () => { if (onMenu) onMenu(); });
+
     this._updateObjective(0);
   }
 
-  update(car, coach, controls, dt) {
+  update(car, coach, controls, dt, sessionTime = 0) {
     this._mph.textContent = Math.round(car.speedMph);
     this._kmh.textContent = Math.round(car.speedMph * 1.60934);
 
@@ -93,16 +84,24 @@ export class HUD {
     }
 
     this._mistakes.textContent = `Mistakes: ${coach.mistakeCount}`;
+    this._timer.textContent    = _fmtTime(sessionTime);
 
     this._updateObjective(car.position.z);
 
-    // Turn signal blink
     if (dt && controls) {
       this._blinkTimer += dt;
       if (this._blinkTimer >= 0.5) { this._blinkOn = !this._blinkOn; this._blinkTimer = 0; }
       const blink = this._blinkOn ? '1' : '.2';
       this._sigL.style.opacity = controls.signalLeft  ? blink : '.15';
       this._sigR.style.opacity = controls.signalRight ? blink : '.15';
+    }
+  }
+
+  setPaused(paused, sessionTime = 0, mistakeCount = 0) {
+    this._pauseEl.style.display = paused ? 'flex' : 'none';
+    if (paused) {
+      this._pauseStats.innerHTML =
+        `Time: &nbsp;<b>${_fmtTime(sessionTime)}</b><br>Mistakes: &nbsp;<b>${mistakeCount}</b>`;
     }
   }
 
@@ -132,4 +131,10 @@ Yellow dashes = centre line.<br>
       this._lastObjKey = key;
     }
   }
+}
+
+function _fmtTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
 }

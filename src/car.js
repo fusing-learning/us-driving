@@ -8,11 +8,16 @@ const DRAG         = 2.5;  // m/s² coast friction
 const STEER_RATE   = 1.6;  // rad/s at low speed
 const STEER_DAMP   = 0.25; // reduces steer rate as speed increases
 
+// Rear-view mirror viewport (shared with game.js render + hud.js frame)
+export const MIRROR_W = 240;
+export const MIRROR_H = 72;
+
 export class Car {
-  constructor(scene) {
-    this.position = new THREE.Vector3(2, 0, 120);
-    this.heading  = 0; // 0 = facing −Z (north). Increases clockwise from above.
-    this.speed    = 0;
+  constructor(scene, startZ = 80) {
+    this.position  = new THREE.Vector3(2, 0, startZ);
+    this._startZ   = startZ;
+    this.heading   = 0; // 0 = facing −Z (north). Increases clockwise from above.
+    this.speed     = 0;
     this._bobPhase = 0;
 
     this.group = new THREE.Group();
@@ -127,6 +132,12 @@ export class Car {
     this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.05, 600);
     this.camera.position.set(-0.44, 1.55, 0.28);
     this.group.add(this.camera);
+
+    // Rear-view mirror: same seat position, rotated 180° to face backward
+    this.mirrorCamera = new THREE.PerspectiveCamera(60, MIRROR_W / MIRROR_H, 0.3, 400);
+    this.mirrorCamera.position.set(-0.44, 1.55, 0.28);
+    this.mirrorCamera.rotation.y = Math.PI;
+    this.group.add(this.mirrorCamera);
   }
 
   resize(width, height) {
@@ -134,20 +145,25 @@ export class Car {
     this.camera.updateProjectionMatrix();
   }
 
-  update(dt, controls) {
+  update(dt, controls, onCurb = false) {
     // ── Throttle / brake ─────────────────────────────────────────────────
+    const maxSpeedLimit = onCurb ? MAX_SPEED * 0.35 : MAX_SPEED;
     if (controls.forward) {
-      this.speed = Math.min(this.speed + ACCEL * dt, MAX_SPEED);
+      this.speed = Math.min(this.speed + ACCEL * dt, maxSpeedLimit);
     } else if (controls.back) {
       if (this.speed > 0.2) {
         this.speed = Math.max(this.speed - BRAKE * dt, 0);
       } else {
-        this.speed = Math.max(this.speed - ACCEL * 0.4 * dt, -MAX_SPEED * 0.3);
+        this.speed = Math.max(this.speed - ACCEL * 0.4 * dt, -maxSpeedLimit * 0.3);
       }
     } else {
       const drag = DRAG * dt * Math.sign(this.speed);
       if (Math.abs(this.speed) > Math.abs(drag)) this.speed -= drag;
       else this.speed = 0;
+    }
+
+    if (onCurb && Math.abs(this.speed) > maxSpeedLimit) {
+      this.speed += (maxSpeedLimit * Math.sign(this.speed) - this.speed) * 4 * dt;
     }
 
     // ── Steering (speed-dependent rate) ──────────────────────────────────
@@ -172,7 +188,7 @@ export class Car {
 
     // ── Reset ─────────────────────────────────────────────────────────────
     if (controls.reset) {
-      this.position.set(2, 0, 120);
+      this.position.set(2, 0, this._startZ);
       this.heading = 0;
       this.speed   = 0;
     }

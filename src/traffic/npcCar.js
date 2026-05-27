@@ -6,10 +6,28 @@ const BRAKE_DIST    = 22;   // start braking this many units before stop line
 const FOLLOW_GAP    = 7;    // minimum gap to NPC ahead (units)
 
 export class NpcCar {
-  constructor(scene, startZ, color) {
-    this.position = new THREE.Vector3(-2, 0, startZ);
-    this.heading  = Math.PI; // facing south (+Z)
-    this.speed    = NPC_SPEED;
+  constructor(scene, startZOrX, color, mode = 'main-road', startTheta = 0) {
+    this.mode = mode;
+    this.theta = startTheta;
+    this.hasStoppedAtStopSign = false;
+    this.stopTimer = 0;
+
+    if (this.mode === 'roundabout') {
+      this.position = new THREE.Vector3(
+        Math.sin(this.theta) * 16.5,
+        0,
+        -500 + Math.cos(this.theta) * 16.5
+      );
+      this.heading = Math.PI / 2 - this.theta;
+    } else if (this.mode === 'cross-street') {
+      this.position = new THREE.Vector3(startZOrX, 0, -302);
+      this.heading = 3 * Math.PI / 2; // facing West
+    } else {
+      this.position = new THREE.Vector3(-2, 0, startZOrX);
+      this.heading = Math.PI; // facing south (+Z)
+    }
+
+    this.speed = NPC_SPEED;
 
     this.group = new THREE.Group();
     scene.add(this.group);
@@ -65,50 +83,124 @@ export class NpcCar {
     this.group.rotation.y = this.heading;
   }
 
-  update(dt, lightState, allNpcZs, selfIndex = -1) {
-    // ── Following distance: check for NPC directly ahead (higher Z = south = ahead) ──
+  update(dt, lightState, npcs, selfIndex = -1) {
+    // ── Following distance: check for NPC directly ahead in travel direction ──
     let tooClose = false;
-    for (let k = 0; k < allNpcZs.length; k++) {
+    const hx = Math.sin(this.heading);
+    const hz = -Math.cos(this.heading);
+    for (let k = 0; k < npcs.length; k++) {
       if (k === selfIndex) continue;
-      const gap = allNpcZs[k] - this.position.z; // positive = that NPC is ahead (south of us)
-      if (gap > 0 && gap < FOLLOW_GAP) { tooClose = true; break; }
+      const other = npcs[k];
+      const dx = other.position.x - this.position.x;
+      const dz = other.position.z - this.position.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const dot = dx * hx + dz * hz;
+      if (dist < FOLLOW_GAP && dot > 0) {
+        tooClose = true;
+        break;
+      }
     }
-
-    // ── Stop-line approach logic ──────────────────────────────────────────
-    // distToStop > 0 → NPC hasn't reached stop line yet (approaching from north)
-    const distToStop = INTERSECTION.stopLineNorth - this.position.z;
-    const approachingRed = distToStop > 0 && distToStop < BRAKE_DIST && lightState !== 'green';
-    const atStopLine     = distToStop >= 0 && distToStop < 0.8;
 
     let targetSpeed = NPC_SPEED;
-    if (approachingRed) {
-      // Ramp speed down linearly as we near stop line
-      targetSpeed = NPC_SPEED * (distToStop / BRAKE_DIST);
-    }
-    if (tooClose) {
-      targetSpeed = 0;
-    }
 
-    // Hard clamp at stop line when red/yellow
-    if (atStopLine && lightState !== 'green') {
-      this.speed = 0;
-      this.position.z = INTERSECTION.stopLineNorth - 0.3;
-      targetSpeed = 0;
-    }
+    if (this.mode === 'main-road') {
+      const distToLight = INTERSECTION.stopLineNorth - this.position.z;
+      const approachingRed = distToLight > 0 && distToLight < BRAKE_DIST && lightState !== 'green';
+      const atLight        = distToLight >= 0 && distToLight < 0.8;
 
-    // Smooth to target speed
-    const accel = targetSpeed > this.speed ? 3 : 10;
-    this.speed += (targetSpeed - this.speed) * accel * dt;
-    this.speed  = Math.max(0, Math.min(NPC_SPEED, this.speed));
+      const distToStopSign = -306.5 - this.position.z;
+      const approachingStop = distToStopSign > 0 && distToStopSign < BRAKE_DIST && !this.hasStoppedAtStopSign;
+      const atStopSign      = distToStopSign >= 0 && distToStopSign < 0.8 && !this.hasStoppedAtStopSign;
 
-    // ── Move (heading = π  →  sin(π)≈0, −cos(π)=+1, so z increases) ────
-    this.position.x += Math.sin(this.heading) * this.speed * dt;
-    this.position.z -= Math.cos(this.heading) * this.speed * dt;
+      if (approachingRed) {
+        targetSpeed = NPC_SPEED * (distToLight / BRAKE_DIST);
+      } else if (approachingStop) {
+        targetSpeed = NPC_SPEED * (distToStopSign / BRAKE_DIST);
+      }
 
-    // ── Wrap to north end of road ─────────────────────────────────────────
-    if (this.position.z > 175) {
-      this.position.z = -155;
-      this.speed      = NPC_SPEED;
+      if (tooClose) {
+        targetSpeed = 0;
+      }
+
+      if (atLight && lightState !== 'green') {
+        this.speed = 0;
+        this.position.z = INTERSECTION.stopLineNorth - 0.3;
+        targetSpeed = 0;
+      } else if (atStopSign) {
+        this.speed = 0;
+        this.position.z = -306.8;
+        targetSpeed = 0;
+        this.stopTimer += dt;
+        if (this.stopTimer >= 2.0) {
+          this.hasStoppedAtStopSign = true;
+          this.stopTimer = 0;
+        }
+      }
+
+      const accel = targetSpeed > this.speed ? 3 : 10;
+      this.speed += (targetSpeed - this.speed) * accel * dt;
+      this.speed  = Math.max(0, Math.min(NPC_SPEED, this.speed));
+
+      this.position.x += Math.sin(this.heading) * this.speed * dt;
+      this.position.z -= Math.cos(this.heading) * this.speed * dt;
+
+      if (this.position.z > 175) {
+        this.position.z = -155;
+        this.speed      = NPC_SPEED;
+      }
+
+      if (this.position.z > -290 && this.position.z < -200) {
+        this.hasStoppedAtStopSign = false;
+        this.stopTimer = 0;
+      }
+    } else if (this.mode === 'cross-street') {
+      const distToStop = this.position.x - 6.5; // stop sign line is at X = 6.5
+      const approachingStop = distToStop > 0 && distToStop < BRAKE_DIST && !this.hasStoppedAtStopSign;
+      const atStopLine      = distToStop >= 0 && distToStop < 0.8 && !this.hasStoppedAtStopSign;
+
+      if (approachingStop) {
+        targetSpeed = NPC_SPEED * (distToStop / BRAKE_DIST);
+      }
+      if (tooClose) {
+        targetSpeed = 0;
+      }
+      if (atStopLine) {
+        this.speed = 0;
+        this.position.x = 6.5;
+        targetSpeed = 0;
+        this.stopTimer += dt;
+        if (this.stopTimer >= 2.0) {
+          this.hasStoppedAtStopSign = true;
+          this.stopTimer = 0;
+        }
+      }
+
+      const accel = targetSpeed > this.speed ? 3 : 10;
+      this.speed += (targetSpeed - this.speed) * accel * dt;
+      this.speed  = Math.max(0, Math.min(NPC_SPEED, this.speed));
+
+      this.position.x += Math.sin(this.heading) * this.speed * dt;
+      this.position.z -= Math.cos(this.heading) * this.speed * dt;
+
+      if (this.position.x < -50) {
+        this.position.x = 50;
+        this.speed      = NPC_SPEED;
+        this.hasStoppedAtStopSign = false;
+        this.stopTimer = 0;
+      }
+    } else if (this.mode === 'roundabout') {
+      if (tooClose) {
+        targetSpeed = 0;
+      }
+
+      const accel = targetSpeed > this.speed ? 3 : 10;
+      this.speed += (targetSpeed - this.speed) * accel * dt;
+      this.speed  = Math.max(0, Math.min(NPC_SPEED, this.speed));
+
+      this.theta += (this.speed / 16.5) * dt;
+      this.position.x = Math.sin(this.theta) * 16.5;
+      this.position.z = -500 + Math.cos(this.theta) * 16.5;
+      this.heading = Math.PI / 2 - this.theta;
     }
 
     this._sync();
