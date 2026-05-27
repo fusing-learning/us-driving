@@ -61,19 +61,26 @@ function _addSolidLine(group, x, y, color) {
   group.add(mesh);
 }
 
+// Gap left for the intersection (cross-street must fit through cleanly)
+const INTER_GAP   = 8;
+const SEG_LEN     = ROAD_HALF - INTER_GAP;               // 190 − 8 = 182
+const SEG_CENTER  = (ROAD_HALF + INTER_GAP) / 2;         // (190 + 8) / 2 = 99
+
 function _addCurb(group, x) {
-  const geo = new THREE.BoxGeometry(0.4, 0.15, ROAD_LENGTH);
   const mat = new THREE.MeshLambertMaterial({ color: 0x999999 });
-  const curb = new THREE.Mesh(geo, mat);
-  curb.position.set(x, 0.075, 0);
-  group.add(curb);
+  [SEG_CENTER, -SEG_CENTER].forEach(cz => {
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.15, SEG_LEN), mat);
+    curb.position.set(x, 0.075, cz);
+    group.add(curb);
+  });
 }
 
 function _addSidewalk(group, x) {
-  const geo = new THREE.PlaneGeometry(3.2, ROAD_LENGTH);
   const mat = new THREE.MeshLambertMaterial({ color: 0xc0b090 });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, 0.02, 0);
-  group.add(mesh);
+  [SEG_CENTER, -SEG_CENTER].forEach(cz => {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, SEG_LEN), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.02, cz);
+    group.add(mesh);
+  });
 }

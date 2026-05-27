@@ -20,64 +20,76 @@ npm run build      # production build to dist/
 | S / ↓ | Brake / Reverse |
 | A / ← | Steer left |
 | D / → | Steer right |
-| Q | Left turn signal |
-| E | Right turn signal |
+| Q | Toggle left signal |
+| E | Toggle right signal |
 | R | Reset position |
 
 ## Architecture — file map
 ```
 src/
-  main.js            Three.js renderer bootstrap, game loop
-  game.js            Scene setup, update/render orchestration
-  car.js             Player car: arcade physics + left-seat FPV camera + cockpit meshes
-  controls.js        Keyboard state (WASD + signals + reset)
-  utils/math.js      clamp, lerp, headingForward, headingRight
+  main.js              Three.js renderer bootstrap, game loop
+  game.js              Scene setup, update/render orchestration; wires all subsystems
+  car.js               Player car: arcade physics + left-seat FPV camera + cockpit meshes
+  controls.js          Keyboard state — signals are toggle (Q/E), driving keys are held
+  utils/math.js        clamp, lerp, headingForward, headingRight
   world/
-    roadBuilder.js   Straight 2-lane road (yellow dashes, white edges, curbs, sidewalks)
-    scenery.js       Ground, buildings, trees, street lamps
+    roadBuilder.js     Straight 2-lane road; curbs/sidewalks split with 16-unit gap at Z=0
+    scenery.js         Ground, buildings, trees, street lamps
+    intersection.js    4-way intersection at Z=0: cross-street, stop lines, traffic light poles
   rules/
-    rulesEngine.js   Violation detection (keep-right, etc.) → returns Set of violation keys
+    lights.js          TrafficLight state machine  green→yellow→red→green (9s/2.5s/9s)
+    rulesEngine.js     Violation detection → Set of violation keys; accepts context {light, intersection, prevZ}
   coaching/
-    coach.js         Violation → message/colour/priority, mistake counter, cooldowns
+    coach.js           Violation → message/colour/priority, mistake counter, cooldowns
+  traffic/
+    npcCar.js          Oncoming NPC car (heading=π, lane X=−2); light-aware stop logic + following distance
+    trafficManager.js  Spawns 6 NPCs, updates them, passes allNpcZs for following distance
   ui/
-    hud.js           DOM overlay: speed, coaching msg, mistake count, signals, hints
-  lessons/           (Phase B+) lesson definitions and scripted objectives
-  traffic/           (Phase B+) NPC cars + traffic manager
+    hud.js             DOM overlay: speed (mph + km/h), coaching msg, mistake count, signals, hints
+  lessons/             (Phase C+) scripted lesson definitions
 ```
 
-## Build phases — what exists and what is next
+## Build phases
 | Phase | Status | Scope |
 |-------|--------|-------|
-| **A — Foundation** | ✅ Done | Drivable car, left-seat FPV, straight road, keep-right coaching |
-| **B — Intersections + traffic** | ⬜ Next | NPC traffic, traffic lights, turn guidance/target-lane highlight, right-turn-on-red |
-| **C — Stops / roundabout / highway** | ⬜ | 4-way stop right-of-way, counterclockwise roundabout, highway merge |
+| **A — Foundation** | ✅ Done | Drivable car, left-seat FPV, straight road, keep-right coaching, mph + km/h HUD |
+| **B — Intersections + traffic** | ✅ Done | Traffic-light intersection at Z=0, 6 oncoming NPC cars, red-light run detection, approach/stop coaching, right-turn-on-red tip |
+| **C — Stops / roundabout / highway** | ⬜ Next | 4-way stop right-of-way, counterclockwise roundabout, highway on-ramp merge |
 | **D — Shell / free drive** | ⬜ | Menu, lesson select, scoring, free-drive loop, rear-view mirror, polish |
 
-## Key design decisions (context for future agents)
-- **Coordinate system**: heading=0 → car faces −Z (north). heading increases clockwise viewed from above.
+## Key design decisions
+- **Coordinate system**: heading=0 → car faces −Z (north). Increases clockwise from above.
   - `position.x += sin(heading) * speed * dt`
   - `position.z -= cos(heading) * speed * dt`
-- **Road layout (Phase A)**: Road runs along Z axis. Right lane (player) = X 0..4. Oncoming = X −4..0. Centre line X=0.
-- **Camera layers**: Car body mesh is on **layer 1**; FPV camera uses default **layer 0** only. Dashboard/wheel/mirrors stay on layer 0 so they appear in-view.
-- **Driver seat offset**: camera local position `(-0.44, 1.55, 0.28)` inside carGroup — this is the LEFT side, making the yellow centre line appear to the driver's LEFT, reinforcing keep-right instinct.
-- **Keep-right rule (Phase A)**: Simple `car.position.x < 0` = WRONG_LANE, `x < 1.2` = LANE_WARNING. Must be generalised (dot-product against road direction) for Phase B curved/turning roads.
-- **Steer rate**: `STEER_RATE / (1 + |speed| * STEER_DAMP)` — fast turning when slow, narrow at speed.
+- **Road layout**: Road along Z axis. Right lane (player) = X 0..4. Oncoming = X −4..0. Centre X=0.
+- **Intersection** at Z=0. `INTERSECTION` constant exported from `intersection.js`:
+  - `stopLineSouth = 6.5` (player stop line), `stopLineNorth = −6.5` (NPC stop line)
+- **Traffic lights**: `TrafficLight` in `rules/lights.js`. `game.js` calls `updateLightVisuals(bulbMats, state)` every frame. Bulb materials are shared across all 4 poles so one `.emissive.set()` updates them all.
+- **NPC cars**: heading=π, lane X=−2, wrap at Z=175→−155. Stop at `stopLineNorth` when not green. `trafficManager` passes array of all NPC Z values for following-distance checks.
+- **Camera layers**: Car body on layer 1 (invisible to FPV camera layer 0). Cockpit interior on layer 0.
+- **Driver seat**: camera at local `(-0.44, 1.55, 0.28)` → centre line appears to driver's LEFT = reinforces keep-right.
+- **rulesEngine context**: `check(car, { light, intersection, prevZ })` — `prevZ` is the car's Z from the previous frame, used to detect the exact frame when the player crosses the stop line.
 
-## Planned lessons (for Phase B+)
-1. Keep right & lane position ← **Phase A delivers this**
-2. Intersections & turns (left = cross oncoming, right = tight)
-3. Traffic lights & right-turn-on-red
-4. 4-way stop right-of-way
-5. Counterclockwise roundabout
-6. Highway on-ramp merge
-7. Free drive (combines all)
+## Violation keys (rulesEngine → coach)
+| Key | Meaning | Mistake? |
+|-----|---------|---------|
+| `WRONG_LANE` | Crossed centre line into oncoming | ✅ |
+| `LANE_WARNING` | Drifting close to centre | ✗ |
+| `RED_LIGHT_RUN` | Crossed stop line while light not green | ✅ |
+| `LIGHT_IS_RED` | Approaching intersection, light is red | ✗ |
+| `LIGHT_IS_YELLOW` | Approaching, light is yellow | ✗ |
+| `APPROACH_INTERSECTION` | Within 28 units of stop line | ✗ |
+| `STOPPED_AT_RED` | Stopped at red near stop line | ✗ (tip) |
 
-## Notes for next agent starting Phase B
-1. Add `src/world/intersection.js` — builds a 4-way intersection tile (stop-sign variant first,
-   then traffic-light variant). Attach it midway along the current road Z=0.
-2. Add `src/traffic/npcCar.js` — a box-car that follows a waypoint list in its lane.
-3. Add `src/traffic/trafficManager.js` — spawns and manages NPCs.
-4. Extend `rulesEngine.js` with: `RED_LIGHT_RUN`, `WRONG_TURN_LANE` violations.
-5. Extend `coach.js` MESSAGES with turn-specific cues.
-6. Add a "target lane highlight" after a turn — a green semi-transparent plane in the correct
-   target lane that fades out after 3 seconds, teaching the player which lane to land in.
+## Notes for next agent starting Phase C
+1. **4-way stop sign**: Add a stop-sign variant of the intersection (or a second intersection further north).
+   - Add `ROLLED_STOP` violation: player crossed stop line at speed > 1 without stopping (speed < 0.5) first.
+   - Add right-of-way coaching: first-to-arrive goes first; tie = yield to the right.
+2. **Counterclockwise roundabout**: Add `src/world/roundabout.js`. Circular road, radius ≈20 units.
+   - Entry from the south; circle flows counter-clockwise (enter right, exit right).
+   - Add `ROUNDABOUT_WRONG_WAY` violation if heading is clockwise.
+   - SG roundabouts go clockwise — explicitly warn the player about this difference.
+3. **Highway on-ramp**: Add `src/world/highway.js`. Multi-lane road + on-ramp acceleration lane.
+   - Coach: "Match speed before merging. Check left mirror. Merge when gap is clear."
+4. For all Phase C road tiles: place them at distinct Z offsets far enough from the Phase B intersection (e.g. Z=−200 for roundabout, Z=+300 for highway) so they don't overlap.
+5. Generalise `rulesEngine.check()` keep-right to use a road-direction dot-product instead of the Phase A hardcoded `x < 0` check — needed for curved/rotated road segments.

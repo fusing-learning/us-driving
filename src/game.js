@@ -3,12 +3,15 @@ import { Car } from './car.js';
 import { Controls } from './controls.js';
 import { buildRoad } from './world/roadBuilder.js';
 import { buildScenery } from './world/scenery.js';
+import { buildIntersection, updateLightVisuals, INTERSECTION } from './world/intersection.js';
+import { TrafficLight } from './rules/lights.js';
+import { TrafficManager } from './traffic/trafficManager.js';
 import { RulesEngine } from './rules/rulesEngine.js';
 import { Coach } from './coaching/coach.js';
 import { HUD } from './ui/hud.js';
 
-const ROAD_WRAP_SOUTH = 170;   // teleport car back when it travels past this Z (south)
-const ROAD_WRAP_NORTH = -160;  // teleport car back when it passes this Z (north)
+const ROAD_WRAP_SOUTH =  170;
+const ROAD_WRAP_NORTH = -160;
 
 export class Game {
   constructor(renderer) {
@@ -18,49 +21,61 @@ export class Game {
     this.scene.background = new THREE.Color(0x87ceeb);
     this.scene.fog = new THREE.Fog(0x87ceeb, 120, 300);
 
-    this.controls    = new Controls();
-    this.car         = new Car(this.scene);
-    this.rulesEngine = new RulesEngine();
-    this.coach       = new Coach();
-    this.hud         = new HUD();
+    this.controls       = new Controls();
+    this.car            = new Car(this.scene);
+    this.light          = new TrafficLight();
+    this.trafficManager = new TrafficManager(this.scene);
+    this.rulesEngine    = new RulesEngine();
+    this.coach          = new Coach();
+    this.hud            = new HUD();
 
     buildScenery(this.scene);
     buildRoad(this.scene);
-    this._setupLights();
+    const { bulbMats } = buildIntersection(this.scene);
+    this._bulbMats = bulbMats;
 
+    this._setupLights();
     window.addEventListener('resize', () => this.resize());
   }
 
   resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h);
     this.car.resize(w, h);
   }
 
   _setupLights() {
-    // Soft ambient fill
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
-    // Directional sun (slightly warm, from the south-west above)
     const sun = new THREE.DirectionalLight(0xfff0cc, 1.1);
     sun.position.set(40, 90, 60);
     this.scene.add(sun);
 
-    // Subtle fill from the sky side
     const fill = new THREE.DirectionalLight(0xccddff, 0.3);
     fill.position.set(-20, 30, -60);
     this.scene.add(fill);
   }
 
   update(dt) {
+    // Capture Z before car moves (needed for stop-line crossing detection)
+    const prevZ = this.car.position.z;
+
     this.car.update(dt, this.controls.state);
 
-    // Loop road: when car exits either end, wrap to the other end
+    // Road loop
     if (this.car.position.z < ROAD_WRAP_NORTH) this.car.position.z = ROAD_WRAP_SOUTH - 5;
     if (this.car.position.z > ROAD_WRAP_SOUTH) this.car.position.z = ROAD_WRAP_NORTH + 5;
 
-    const violations = this.rulesEngine.check(this.car);
+    // Traffic light tick + visual update
+    this.light.update(dt);
+    updateLightVisuals(this._bulbMats, this.light.state);
+
+    // NPC cars
+    this.trafficManager.update(dt, this.light.state);
+
+    // Rules → coaching → HUD
+    const context    = { light: this.light, intersection: INTERSECTION, prevZ };
+    const violations = this.rulesEngine.check(this.car, context);
     this.coach.update(dt, violations);
     this.hud.update(this.car, this.coach, this.controls.state, dt);
   }
